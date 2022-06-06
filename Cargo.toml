@@ -1,0 +1,26 @@
+[package]
+name = "arachnid"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.59.0"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+anyhow = "1.0.57"
+curl = "0.4.43"
+log = "0.4.17"
+scraper = { version = "0.13.0", default-features = false }
+threadpool = "1.8.1"
+
+
+[[example]]
+name = "zcool"
+
+
+[profile.release]
+panic = "abort"
+codegen-units = 1
+lto = true
+opt-level = "z"
+strip = "debuginfo"
