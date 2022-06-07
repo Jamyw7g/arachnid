@@ -9,7 +9,7 @@ use curl::easy::Easy2;
 use curl::multi::{Easy2Handle, Multi};
 use threadpool::ThreadPool;
 
-use crate::product::{Product, Value, MidProduct};
+use crate::product::{MidProduct, Product, Value};
 use crate::request::Request;
 use crate::response::Response;
 
@@ -34,7 +34,11 @@ pub struct Scheduler {
 }
 
 impl Scheduler {
-    pub fn new(pipelines: Vec<Pipeline>, middlewares: Vec<Middleware>, timeout: Option<Duration>) -> anyhow::Result<Self> {
+    pub fn new(
+        pipelines: Vec<Pipeline>,
+        middlewares: Vec<Middleware>,
+        timeout: Option<Duration>,
+    ) -> anyhow::Result<Self> {
         let request_queue = Arc::new(Mutex::new(Vec::new()));
         let (product_tx, product_rx) = sync_channel(64);
         let product_tx = Arc::new(product_tx);
@@ -65,7 +69,7 @@ impl Scheduler {
                                 for mid in middlewares.iter() {
                                     match mid_product {
                                         MidProduct::Request(req) => mid_product = mid(req),
-                                        _ => break
+                                        _ => break,
                                     }
                                 }
                                 match mid_product {
@@ -155,7 +159,6 @@ impl Scheduler {
                             let token = next_token();
                             handler.set_token(token)?;
                             self.handles.insert(token, (handler, req));
-
                         }
                         MidProduct::Response((resp, cb)) => {
                             let tx = Arc::clone(&self.product_tx);
@@ -163,7 +166,7 @@ impl Scheduler {
                                 cb(resp, tx);
                             });
                         }
-                        _ => ()
+                        _ => (),
                     }
                 }
             }

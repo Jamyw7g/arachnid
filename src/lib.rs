@@ -5,9 +5,8 @@ pub mod scheduler;
 
 pub use scheduler::Scheduler;
 
-pub use scraper::*;
 pub use curl::easy::{Easy2, Handler, List};
-
+pub use scraper::*;
 
 #[cfg(test)]
 mod tests {

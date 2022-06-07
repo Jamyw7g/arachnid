@@ -4,11 +4,11 @@ use std::{
 };
 
 use arachnid::{
-    product::{Item, Product, Value, MidProduct},
+    product::{Item, MidProduct, Product, Value},
     request::Request,
     response::Response,
-    scheduler::{Scheduler, Pipeline, Middleware},
-    Selector, Easy2, List
+    scheduler::{Middleware, Pipeline, Scheduler},
+    Easy2, List, Selector,
 };
 
 fn main() -> anyhow::Result<()> {
@@ -85,4 +85,3 @@ fn save_img(resp: Response, tx: Arc<SyncSender<Product>>) {
     println!("{filename}");
      */
 }
-
