@@ -15,7 +15,8 @@ threadpool = "1.8.1"
 
 
 [[example]]
-name = "zcool"
+name = "dark_web"
+path = "examples/dark_web.rs"
 
 
 [profile.release]
