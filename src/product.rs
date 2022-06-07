@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use curl::easy::Easy2;
 
-use crate::{request::Request, response::Response};
+use crate::{request::{Request, CallBack}, response::Response};
 
 pub enum Product {
     Request(Request),
@@ -26,9 +26,12 @@ impl Default for Value {
     }
 }
 
+pub type Item = HashMap<String, Value>;
+
 
 pub enum MidProduct {
-    Easy(Easy2<Response>),
+    Easy((Easy2<Response>, Request)),
+    Response((Response, CallBack)),
     Request(Request),
     Ignore
 }

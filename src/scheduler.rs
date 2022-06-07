@@ -5,16 +5,17 @@ use std::sync::Mutex;
 use std::sync::{atomic::AtomicUsize, Arc};
 use std::time::Duration;
 
-use curl::easy::{Easy2, List};
+use curl::easy::Easy2;
 use curl::multi::{Easy2Handle, Multi};
 use threadpool::ThreadPool;
 
-use crate::product::{Product, Value};
+use crate::product::{Product, Value, MidProduct};
 use crate::request::Request;
 use crate::response::Response;
 
-pub type PipeLine =
+pub type Pipeline =
     Box<dyn Fn(HashMap<String, Value>) -> Option<HashMap<String, Value>> + Send + Sync + 'static>;
+pub type Middleware = Box<dyn Fn(Request) -> MidProduct + Send + Sync + 'static>;
 
 pub static TOKEN: AtomicUsize = AtomicUsize::new(0);
 
@@ -26,14 +27,14 @@ pub struct Scheduler {
     multi: Multi,
     pool: ThreadPool,
     handles: HashMap<usize, (Easy2Handle<Response>, Request)>,
-    request_queue: Arc<Mutex<Vec<Request>>>,
+    request_queue: Arc<Mutex<Vec<MidProduct>>>,
     product_tx: Arc<SyncSender<Product>>,
     finished: Arc<AtomicBool>,
     timeout: Option<Duration>,
 }
 
 impl Scheduler {
-    pub fn new(pipelines: Vec<PipeLine>, timeout: Option<Duration>) -> anyhow::Result<Self> {
+    pub fn new(pipelines: Vec<Pipeline>, middlewares: Vec<Middleware>, timeout: Option<Duration>) -> anyhow::Result<Self> {
         let request_queue = Arc::new(Mutex::new(Vec::new()));
         let (product_tx, product_rx) = sync_channel(64);
         let product_tx = Arc::new(product_tx);
@@ -47,15 +48,34 @@ impl Scheduler {
         std::thread::Builder::new().name("Transfer".into()).spawn({
             let request_queue = Arc::clone(&request_queue);
             let finished = Arc::clone(&finished);
-            let pool = pool.clone();
+            let pool = threadpool::Builder::new()
+                .thread_name("Middlewares".into())
+                .build();
             let pipelines = Arc::new(pipelines);
+            let middlewares = Arc::new(middlewares);
             move || loop {
                 if let Ok(val) = product_rx.recv_timeout(timeout.unwrap_or(Duration::from_secs(30)))
                 {
                     match val {
                         Product::Request(req) => {
-                            let mut queue = request_queue.lock().unwrap();
-                            queue.push(req);
+                            let request_queue = Arc::clone(&request_queue);
+                            let middlewares = Arc::clone(&middlewares);
+                            pool.execute(move || {
+                                let mut mid_product = MidProduct::Request(req);
+                                for mid in middlewares.iter() {
+                                    match mid_product {
+                                        MidProduct::Request(req) => mid_product = mid(req),
+                                        _ => break
+                                    }
+                                }
+                                match mid_product {
+                                    MidProduct::Ignore => (),
+                                    _ => {
+                                        let mut queue = request_queue.lock().unwrap();
+                                        queue.push(mid_product);
+                                    }
+                                }
+                            });
                         }
                         Product::Item(item) => {
                             let pipelines = Arc::clone(&pipelines);
@@ -118,18 +138,33 @@ impl Scheduler {
 
             if !que_res.is_empty() {
                 for req in que_res.into_iter() {
-                    let mut easy = Easy2::new(Response::default());
-                    easy.url(&req.url)?;
-                    easy.get(true)?;
-                    let mut headers = List::new();
-                    headers.append("User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.5 Safari/605.1.15")?;
-                    easy.http_headers(headers)?;
+                    match req {
+                        MidProduct::Request(req) => {
+                            let mut easy = Easy2::new(Response::default());
+                            easy.url(&req.url)?;
+                            easy.get(true)?;
+                            log::info!("New request: {}", &req.url);
+                            let mut handler = self.multi.add2(easy)?;
+                            let token = next_token();
+                            handler.set_token(token)?;
+                            self.handles.insert(token, (handler, req));
+                        }
+                        MidProduct::Easy((easy, req)) => {
+                            log::info!("New easy2: {}", &req.url);
+                            let mut handler = self.multi.add2(easy)?;
+                            let token = next_token();
+                            handler.set_token(token)?;
+                            self.handles.insert(token, (handler, req));
 
-                    log::info!("New request: {}", &req.url);
-                    let mut handler = self.multi.add2(easy)?;
-                    let token = next_token();
-                    handler.set_token(token)?;
-                    self.handles.insert(token, (handler, req));
+                        }
+                        MidProduct::Response((resp, cb)) => {
+                            let tx = Arc::clone(&self.product_tx);
+                            self.pool.execute(move || {
+                                cb(resp, tx);
+                            });
+                        }
+                        _ => ()
+                    }
                 }
             }
             if self.multi.perform()? == 0 {

@@ -5,7 +5,7 @@ use crate::{product::Product, response::Response};
 pub type CallBack = Box<dyn FnOnce(Response, Arc<SyncSender<Product>>) + Send + 'static>;
 
 pub struct Request {
-    pub(crate) url: String,
+    pub url: String,
     pub(crate) callback: CallBack,
 }
 
